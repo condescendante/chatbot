@@ -1,0 +1,205 @@
+kind: Template
+apiVersion: template.openshift.io/v1
+metadata:
+  name: emr-summariser-anyuid
+  namespace: openshift
+  labels:
+    samples.operator.openshift.io/managed: 'true'
+  annotations:
+    openshift.io/display-name: emr-summariser-anyuid
+    openshift.io/documentation-url: ''
+    samples.operator.openshift.io/version: 4.12.25
+    tags: 'emr-summariser-anyuid'
+    description: >-
+      WARNING: Any data stored will be lost upon pod destruction. Only use this
+      template for testing
+    openshift.io/long-description: >-
+      This template provides a Document Uploader UI, Flowise Chatbot Builder and ChromaDB server for an EMR Summariser. 
+    openshift.io/support-url: 'https://access.redhat.com'
+    iconClass: icon-catalog
+    openshift.io/provider-display-name: 'Red Hat, Inc.'
+message: >-
+  The following service(s) have been created in your project:
+  ${FRONTEND_SERVICE_NAME}, ${CHROMADB_SERVICE_NAME}, ${FLOWISE_SERVICE_NAME}.
+
+objects:
+  - apiVersion: security.openshift.io/v1
+    kind: SecurityContextConstraints
+    metadata:
+      name: anyuid
+    allowPrivilegedContainer: false
+    runAsUser:
+      type: RunAsAny
+    seLinuxContext:
+      type: MustRunAs
+    supplementalGroups:
+      type: RunAsAny
+    users:
+    - system:serviceaccount:openshift:default
+
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      name: '${DATABASE_SERVICE_NAME}'
+    spec:
+      ports:
+        - name: chromadb
+          nodePort: 0
+          port: 8000
+          protocol: TCP
+          targetPort: 8000
+      selector:
+        name: '${DATABASE_SERVICE_NAME}'
+      sessionAffinity: None
+      type: ClusterIP
+    status:
+      loadBalancer: {}
+  - apiVersion: apps.openshift.io/v1
+    kind: DeploymentConfig
+    metadata:
+      annotations:
+        template.alpha.openshift.io/wait-for-ready: 'true'
+      name: '${DATABASE_SERVICE_NAME}'
+    spec:
+      replicas: 1
+      selector:
+        name: '${DATABASE_SERVICE_NAME}'
+      strategy:
+        type: Recreate
+      template:
+        metadata:
+          labels:
+            name: '${DATABASE_SERVICE_NAME}'
+        spec:
+          containers:
+            - resources:
+                limits:
+                  memory: '${MEMORY_LIMIT}'
+              terminationMessagePath: /dev/termination-log
+              name: chromadb
+              securityContext:
+                capabilities: {}
+                privileged: false
+              ports:
+                - containerPort: 8000
+                  protocol: TCP
+              imagePullPolicy: IfNotPresent
+              capabilities: {}
+              image: '${CHROMADB_IMAGE}'
+          dnsPolicy: ClusterFirst
+          restartPolicy: Always
+    status: {}
+  - apiVersion: route.openshift.io/v1
+    kind: Route
+    metadata:
+      name: '${DATABASE_SERVICE_NAME}'
+    spec:
+      port:
+        targetPort: chromadb
+      tls:
+        insecureEdgeTerminationPolicy: Redirect
+        termination: edge
+      to:
+        kind: Service
+        name: '${DATABASE_SERVICE_NAME}'
+        weight: 100
+      wildcardPolicy: None
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      name: '${FLOWISE_SERVICE_NAME}'
+    spec:
+      ports:
+        - name: flowise
+          nodePort: 0
+          port: 3000
+          protocol: TCP
+          targetPort: 3000
+      selector:
+        name: '${FLOWISE_SERVICE_NAME}'
+      sessionAffinity: None
+      type: ClusterIP
+    status:
+      loadBalancer: {}
+  - apiVersion: apps.openshift.io/v1
+    kind: DeploymentConfig
+    metadata:
+      annotations:
+        template.alpha.openshift.io/wait-for-ready: 'true'
+      name: '${FLOWISE_SERVICE_NAME}'
+    spec:
+      replicas: 1
+      selector:
+        name: '${FLOWISE_SERVICE_NAME}'
+      strategy:
+        type: Recreate
+      template:
+        metadata:
+          labels:
+            name: '${FLOWISE_SERVICE_NAME}'
+        spec:
+          containers:
+            - resources:
+                limits:
+                  memory: '${MEMORY_LIMIT}'
+              terminationMessagePath: /dev/termination-log
+              name: flowise
+              securityContext:
+                capabilities: {}
+                privileged: false
+              ports:
+                - containerPort: 3000
+                  protocol: TCP
+              imagePullPolicy: IfNotPresent
+              capabilities: {}
+              image: '${FLOWISE_IMAGE}'
+          dnsPolicy: ClusterFirst
+          restartPolicy: Always
+    status: {}
+  - apiVersion: route.openshift.io/v1
+    kind: Route
+    metadata:
+      name: '${FLOWISE_SERVICE_NAME}'
+    spec:
+      port:
+        targetPort: flowise
+      tls:
+        insecureEdgeTerminationPolicy: Redirect
+        termination: edge
+      to:
+        kind: Service
+        name: '${FLOWISE_SERVICE_NAME}'
+        weight: 100
+      wildcardPolicy: None
+parameters:
+  - name: MEMORY_LIMIT
+    displayName: Memory Limit
+    description: Maximum amount of memory the container can use.
+    value: 512Mi
+    required: true
+  - name: NAMESPACE
+    displayName: Namespace
+    description: The OpenShift Namespace where the ImageStream resides.
+    value: openshift
+  - name: DATABASE_SERVICE_NAME
+    displayName: Database Service Name
+    description: The name of the OpenShift Service exposed for the database.
+    value: chromadb
+    required: true
+  - name: FLOWISE_SERVICE_NAME
+    displayName: Flowise Service Name
+    description: The name of the OpenShift Service exposed for flowise.
+    value: flowise
+    required: true
+  - name: CHROMADB_IMAGE
+    displayName: ChromaDB Image
+    description: ChromaDB Image
+    value: docker.io/faruqzafir/test1:v1
+    required: true
+  - name: FLOWISE_IMAGE
+    displayName: Flowise Image
+    description: Flowise Image
+    value: docker.io/rach228/flowise-chatflow:1.2
+    required: true
+labels:
+  template: emr-summariser-anyuid-template
